@@ -8,7 +8,7 @@ import com.poc.connectivity.model.ConnectionResponse;
 import com.poc.connectivity.model.ConnectionSession;
 import com.poc.connectivity.domain.ConnectionStatus;
 import com.poc.connectivity.repository.ConnectionChannelCache;
-import com.poc.connectivity.repository.ConnectionSessionRepository;
+import com.poc.connectivity.repository.ConnectionSessionStore;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelOption;
@@ -35,7 +35,7 @@ import java.util.UUID;
  *
  * <p>This component coordinates:
  * <ul>
- *   <li>Connection state persistence through {@link ConnectionSessionRepository}</li>
+ *   <li>Connection state persistence through {@link ConnectionSessionStore}</li>
  *   <li>Runtime channel tracking through {@link ConnectionChannelCache}</li>
  *   <li>Asynchronous socket connect via Netty {@link EventLoopGroup}</li>
  *   <li>Live status broadcasting through an in-memory reactive sink</li>
@@ -47,7 +47,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class ConnectivityService implements IConnectivityService {
 
-    private final ConnectionSessionRepository sessionRepository;
+    private final ConnectionSessionStore sessionRepository;
     private final ConnectionChannelCache channelCache;
     private final SocketProperties socketProperties;
     private final EventLoopGroup eventLoopGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
@@ -78,19 +78,19 @@ public class ConnectivityService implements IConnectivityService {
                                     session.id(),
                                     ConnectionStatus.OPEN,
                                     key,
-                                    "Connessione gia attiva"
+                                    "Connection already opened"
                             ));
                             case CONNECTING -> Mono.just(response(
                                     session.id(),
                                     ConnectionStatus.CONNECTING,
                                     key,
-                                    "Connessione in corso"
+                                    "Connecting"
                             ));
                             case CLOSING -> Mono.just(response(
                                     session.id(),
                                     ConnectionStatus.CLOSING,
                                     key,
-                                    "Connessione in chiusura"
+                                    "Closing Connection"
                             ));
                             default -> restartSession(session);
                         })
