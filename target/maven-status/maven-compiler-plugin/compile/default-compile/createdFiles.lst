@@ -1,0 +1,16 @@
+com\poc\connectivity\service\ConnectivityService.class
+com\poc\connectivity\domain\ConnectivitySubSystem.class
+com\poc\connectivity\domain\ConnectivityProtocol.class
+com\poc\connectivity\domain\ConnectionStatus.class
+com\poc\connectivity\model\ConnectionKey.class
+com\poc\connectivity\ConnectivityServiceApplication.class
+com\poc\connectivity\model\ConnectionRequest.class
+com\poc\connectivity\exception\ConnectivityException.class
+com\poc\connectivity\model\ConnectionSession.class
+com\poc\connectivity\service\IConnectivityService.class
+com\poc\connectivity\config\SocketProperties.class
+com\poc\connectivity\repository\ConnectionSessionRepository.class
+com\poc\connectivity\controller\ConnectivityController.class
+com\poc\connectivity\service\ConnectivityService$1.class
+com\poc\connectivity\model\ConnectionResponse.class
+com\poc\connectivity\repository\ConnectionChannelCache.class

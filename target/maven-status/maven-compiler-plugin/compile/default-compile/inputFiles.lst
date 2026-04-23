@@ -1,0 +1,15 @@
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\config\SocketProperties.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\ConnectivityServiceApplication.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\controller\ConnectivityController.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\domain\ConnectionStatus.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\domain\ConnectivityProtocol.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\domain\ConnectivitySubSystem.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\exception\ConnectivityException.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\model\ConnectionKey.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\model\ConnectionRequest.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\model\ConnectionResponse.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\model\ConnectionSession.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\repository\ConnectionChannelCache.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\repository\ConnectionSessionRepository.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\service\ConnectivityService.java
+C:\Users\lmartone\Desktop\poc2-main\src\main\java\com\poc\connectivity\service\IConnectivityService.java
