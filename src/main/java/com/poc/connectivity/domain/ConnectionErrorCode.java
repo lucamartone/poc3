@@ -1,0 +1,12 @@
+package com.poc.connectivity.domain;
+
+public enum ConnectionErrorCode {
+    HOST_UNREACHABLE,
+    PORT_CLOSED,
+    CONNECTION_TIMEOUT,
+    REMOTE_CLOSED,
+    CONFIGURATION_NOT_FOUND,
+    CONFIGURATION_NOT_PROMOTED,
+    CONNECTION_NOT_FOUND,
+    CONNECTION_FAILED
+}
