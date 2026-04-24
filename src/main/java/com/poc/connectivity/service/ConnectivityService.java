@@ -1,6 +1,7 @@
 package com.poc.connectivity.service;
 
 import com.poc.connectivity.config.SocketProperties;
+import com.poc.connectivity.domain.ConnectionErrorCode;
 import com.poc.connectivity.exception.ConnectivityException;
 import com.poc.connectivity.model.ConnectionKey;
 import com.poc.connectivity.model.ConnectionRequest;
@@ -26,8 +27,12 @@ import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
+import java.net.UnknownHostException;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeoutException;
 
 
 /**
@@ -45,7 +50,7 @@ import java.util.UUID;
  */
 @Service
 @AllArgsConstructor
-public class ConnectivityService implements IConnectivityService {
+public class ConnectivityService implements ConnectivityOperations {
 
     private final ConnectionSessionStore sessionRepository;
     private final ConnectionChannelCache channelCache;
@@ -53,20 +58,6 @@ public class ConnectivityService implements IConnectivityService {
     private final EventLoopGroup eventLoopGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     private final Sinks.Many<ConnectionResponse> statusSink = Sinks.many().multicast().onBackpressureBuffer();
 
-    /**
-     * Idempotent connect command.
-     *
-     * <p>Behavior by current state:
-     * <ul>
-     *   <li>{@code OPEN}: returns already-active response</li>
-     *   <li>{@code CONNECTING}: returns in-progress response</li>
-     *   <li>{@code CLOSING}: returns closing response</li>
-     *   <li>other states: restarts the connection asynchronously</li>
-     * </ul>
-     *
-     * @param request connection target descriptor
-     * @return reactive response with current or newly triggered state
-     */
     @Override
     public Mono<ConnectionResponse> connect(ConnectionRequest request) {
         ConnectionKey key = ConnectionKey.from(request);
@@ -122,17 +113,17 @@ public class ConnectivityService implements IConnectivityService {
                                     session.id(),
                                     ConnectionStatus.CLOSED,
                                     key,
-                                    "Connessione gia chiusa"
+                                    "Connection already closed"
                             ));
                             case CLOSING -> Mono.just(response(
                                     session.id(),
                                     ConnectionStatus.CLOSING,
                                     key,
-                                    "Connessione in chiusura"
+                                    "Connection is closing"
                             ));
                             default -> closeSession(session);
                         })
-                        .orElseGet(() -> Mono.error(new ConnectivityException("Connessione non trovata"))))
+                        .orElseGet(() -> Mono.error(new ConnectivityException("Connection not found"))))
                 .doOnNext(this::publishEvent);
     }
 
@@ -168,9 +159,9 @@ public class ConnectivityService implements IConnectivityService {
                                 session.id(),
                                 session.getStatus(),
                                 session.key(),
-                                "Stato connessione"
+                                "Connection status"
                         )))
-                        .orElseGet(() -> Mono.error(new ConnectivityException("Connessione non trovata"))));
+                        .orElseGet(() -> Mono.error(new ConnectivityException("Connection not found"))));
     }
 
     /**
@@ -209,7 +200,7 @@ public class ConnectivityService implements IConnectivityService {
                 .subscribeOn(Schedulers.boundedElastic())
                 .map(saved -> {
                     launchAsyncConnect(saved);
-                    return response(saved.id(), ConnectionStatus.CONNECTING, key, "Connessione avviata");
+                    return response(saved.id(), ConnectionStatus.CONNECTING, key, "Connection started");
                 });
     }
 
@@ -227,7 +218,7 @@ public class ConnectivityService implements IConnectivityService {
                 .subscribeOn(Schedulers.boundedElastic())
                 .map(saved -> {
                     launchAsyncConnect(saved);
-                    return response(saved.id(), ConnectionStatus.CONNECTING, saved.key(), "Connessione riavviata");
+                    return response(saved.id(), ConnectionStatus.CONNECTING, saved.key(), "Connection restarted");
                 });
     }
 
@@ -240,9 +231,12 @@ public class ConnectivityService implements IConnectivityService {
                 .subscribe(
                         unused -> {
                         },
-                        error -> markErrorAsync(session.id(), failureMessage(error))
-                                .doOnNext(this::publishEvent)
-                                .subscribe()
+                        error -> {
+                            ErrorDescriptor failure = failureDescriptor(error);
+                            markErrorAsync(session.id(), failure.message(), failure.code())
+                                    .doOnNext(this::publishEvent)
+                                    .subscribe();
+                        }
                 );
     }
 
@@ -267,7 +261,8 @@ public class ConnectivityService implements IConnectivityService {
         try {
             bootstrap.connect(session.key().ip(), session.key().port()).addListener(future -> {
                 if (!future.isSuccess()) {
-                    markErrorAsync(session.id(), failureMessage(future.cause()))
+                    ErrorDescriptor failure = failureDescriptor(future.cause());
+                    markErrorAsync(session.id(), failure.message(), failure.code())
                             .doOnNext(this::publishEvent)
                             .subscribe();
                     return;
@@ -280,7 +275,8 @@ public class ConnectivityService implements IConnectivityService {
                         .subscribe();
             });
         } catch (Exception e) {
-            markErrorAsync(session.id(), failureMessage(e))
+            ErrorDescriptor failure = failureDescriptor(e);
+            markErrorAsync(session.id(), failure.message(), failure.code())
                     .doOnNext(this::publishEvent)
                     .subscribe();
         }
@@ -296,7 +292,7 @@ public class ConnectivityService implements IConnectivityService {
         return Mono.fromCallable(() -> sessionRepository.findById(sessionId).map(session -> {
                     session.markOpen();
                     ConnectionSession saved = sessionRepository.save(session);
-                    return response(saved.id(), saved.getStatus(), saved.key(), "Connessione aperta");
+                    return response(saved.id(), saved.getStatus(), saved.key(), "Connection opened");
                 }))
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(Mono::justOrEmpty);
@@ -309,11 +305,11 @@ public class ConnectivityService implements IConnectivityService {
      * @param message failure description
      * @return emitted response if session still exists, otherwise empty
      */
-    private Mono<ConnectionResponse> markErrorAsync(UUID sessionId, String message) {
+    private Mono<ConnectionResponse> markErrorAsync(UUID sessionId, String message, ConnectionErrorCode errorCode) {
         return Mono.fromCallable(() -> sessionRepository.findById(sessionId).map(session -> {
                     session.markError(message);
                     ConnectionSession saved = sessionRepository.save(session);
-                    return response(saved.id(), saved.getStatus(), saved.key(), message);
+                    return response(saved.id(), saved.getStatus(), saved.key(), message, errorCode);
                 }))
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(Mono::justOrEmpty);
@@ -340,12 +336,12 @@ public class ConnectivityService implements IConnectivityService {
         return Mono.fromCallable(() -> {
                     session.markClosing();
                     ConnectionSession closing = sessionRepository.save(session);
-                    publishEvent(response(closing.id(), ConnectionStatus.CLOSING, closing.key(), "Connessione in chiusura"));
+                    publishEvent(response(closing.id(), ConnectionStatus.CLOSING, closing.key(), "Connection is closing"));
                     channelCache.get(session.id()).ifPresent(this::closeChannelQuietly);
                     channelCache.remove(session.id());
                     closing.markClosed();
                     ConnectionSession closed = sessionRepository.save(closing);
-                    return response(closed.id(), ConnectionStatus.CLOSED, closed.key(), "Connessione chiusa");
+                    return response(closed.id(), ConnectionStatus.CLOSED, closed.key(), "Connection closed");
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 ;
@@ -355,17 +351,100 @@ public class ConnectivityService implements IConnectivityService {
      * Creates API status DTO with current timestamp.
      */
     private ConnectionResponse response(UUID id, ConnectionStatus status, ConnectionKey key, String message) {
-        return new ConnectionResponse(id, status, key, Instant.now(), message);
+        return new ConnectionResponse(id, status, key, Instant.now(), message, null);
     }
 
     /**
-     * Converts any throwable into a client-facing failure message.
+     * Creates API status DTO with current timestamp and explicit error code.
      */
-    private String failureMessage(Throwable throwable) {
-        if (throwable == null || throwable.getMessage() == null || throwable.getMessage().isBlank()) {
-            return "Errore apertura socket verso endpoint remoto";
+    private ConnectionResponse response(
+            UUID id,
+            ConnectionStatus status,
+            ConnectionKey key,
+            String message,
+            ConnectionErrorCode errorCode
+    ) {
+        return new ConnectionResponse(id, status, key, Instant.now(), message, errorCode);
+    }
+
+    /**
+     * Converts any throwable into a client-facing failure descriptor.
+     *
+     * <p>The descriptor contains both a readable English message and a stable
+     * domain error code for client-side handling.
+     */
+    private ErrorDescriptor failureDescriptor(Throwable throwable) {
+        if (throwable == null) {
+            return new ErrorDescriptor(
+                    "Unable to open socket connection to remote endpoint",
+                    ConnectionErrorCode.CONNECTION_FAILED
+            );
         }
-        return throwable.getMessage();
+
+        Throwable root = rootCause(throwable);
+        String message = root.getMessage();
+        String normalizedMessage = message == null ? "" : message.toLowerCase();
+
+        if (root instanceof UnknownHostException) {
+            return new ErrorDescriptor("Host unreachable: unknown host", ConnectionErrorCode.HOST_UNREACHABLE);
+        }
+        if (root instanceof NoRouteToHostException) {
+            return new ErrorDescriptor("Host unreachable: no route to host", ConnectionErrorCode.HOST_UNREACHABLE);
+        }
+        if (root instanceof ConnectException) {
+            if (normalizedMessage.contains("refused")) {
+                return new ErrorDescriptor(
+                        "Connection refused: port is closed or not available",
+                        ConnectionErrorCode.PORT_CLOSED
+                );
+            }
+            return new ErrorDescriptor(
+                    "Connection failed: remote host or port is not reachable",
+                    ConnectionErrorCode.CONNECTION_FAILED
+            );
+        }
+        if (root instanceof TimeoutException || normalizedMessage.contains("timed out") || normalizedMessage.contains("timeout")) {
+            return new ErrorDescriptor(
+                    "Connection timeout: remote host did not respond in time",
+                    ConnectionErrorCode.CONNECTION_TIMEOUT
+            );
+        }
+        if (normalizedMessage.contains("unreachable")) {
+            return new ErrorDescriptor("Host unreachable", ConnectionErrorCode.HOST_UNREACHABLE);
+        }
+        if (normalizedMessage.contains("refused")) {
+            return new ErrorDescriptor(
+                    "Connection refused: port is closed or not available",
+                    ConnectionErrorCode.PORT_CLOSED
+            );
+        }
+        if (normalizedMessage.contains("closed")) {
+            return new ErrorDescriptor("Connection closed by remote host", ConnectionErrorCode.REMOTE_CLOSED);
+        }
+        if (message == null || message.isBlank()) {
+            return new ErrorDescriptor(
+                    "Unable to open socket connection to remote endpoint",
+                    ConnectionErrorCode.CONNECTION_FAILED
+            );
+        }
+        return new ErrorDescriptor("Socket connection error: " + message, ConnectionErrorCode.CONNECTION_FAILED);
+    }
+
+    /**
+     * Structured failure output used to keep message and error code aligned.
+     */
+    private record ErrorDescriptor(String message, ConnectionErrorCode code) {
+    }
+
+    /**
+     * Resolves the deepest cause for more accurate error classification.
+     */
+    private Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
     }
 
     /**
